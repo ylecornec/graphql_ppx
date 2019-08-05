@@ -94,37 +94,11 @@ let rewrite_query loc delim query =
         let parts = Result_decoder.unify_document_schema config document in
         Output_bucklescript_module.generate_modules config parts
 
-let mapper argv =
+let mapper =
   let open Ast_402 in
   let open Ast_mapper in
   let open Parsetree in
   let open Asttypes in
-
-  let () = Ppx_config.(set_config {
-      verbose_logging = (match List.find ((=) "-verbose") argv with
-          | _ -> true
-          | exception Not_found -> false);
-      output_mode = (match List.find ((=) "-ast-out") argv with
-          | _ -> Ppx_config.Apollo_AST
-          | exception Not_found -> Ppx_config.String);
-      verbose_error_handling = (match List.find ((=) "-o") argv with
-          | _ -> false
-          | exception Not_found -> begin match Sys.getenv "NODE_ENV" with
-              | "production" -> false
-              | _ -> true
-              | exception Not_found -> true
-            end);
-      apollo_mode = (match List.find ((=) "-apollo-mode") argv with
-          | _ -> true
-          | exception Not_found -> false);
-      root_directory = Sys.getcwd ();
-      schema_file = (match List.find (is_prefixed "-schema=") argv with
-          | arg -> drop_prefix "-schema=" arg
-          | exception Not_found -> "graphql_schema.json");
-      raise_error_with_loc = fun loc message ->
-        let loc = conv_loc loc in
-        raise (Location.Error (Location.error ~loc message))
-    }) in
 
   let module_expr mapper mexpr = begin
     match mexpr with
@@ -145,9 +119,42 @@ let mapper argv =
     | other -> default_mapper.module_expr mapper other
   end in
 
-  To_current.copy_mapper { default_mapper with module_expr }
+  (*To_current.copy_mapper*) { default_mapper with module_expr }
 
 
 let () =
-  Migrate_parsetree.Compiler_libs.Ast_mapper.register
-    "graphql" (fun argv -> mapper argv)
+  let verbose_logging = ref false in
+  let output_mode = ref Ppx_config.String in
+  let verbose_error_handling = ref (
+    match Sys.getenv "NODE_ENV" with
+    | "production" -> false
+    | _ -> true
+    | exception Not_found -> true )
+  in
+  let apollo_mode = ref false in
+  let schema_file = ref "graphql_schema.json" in
+
+  let args = [
+    "-verbose", Arg.Set verbose_logging, "";
+    "-ast-out", Arg.Unit (fun () -> output_mode := Ppx_config.Apollo_AST), "";
+    "-o", Arg.Clear verbose_error_handling, "";
+    "-apollo-mode", Arg.Set apollo_mode, "";
+    "-schema", Arg.Set_string schema_file, ""
+  ]
+  in
+
+  Migrate_parsetree.Driver.register ~name:"graphql" ~args
+    Migrate_parsetree.Versions.ocaml_402
+    (fun _config _cookies ->
+      let () = Ppx_config.set_config {
+          verbose_logging = !verbose_logging;
+          output_mode = !output_mode;
+          verbose_error_handling = !verbose_error_handling;
+          apollo_mode = !apollo_mode;
+          root_directory = Sys.getcwd ();
+          schema_file = !schema_file;
+          raise_error_with_loc = fun loc message ->
+            let loc = conv_loc loc in
+            raise (Location.Error (Location.error ~loc message))
+        } in
+      mapper)
