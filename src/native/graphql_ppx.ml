@@ -130,10 +130,51 @@ let rewrite ~loc ~path:_ expr =
       Location.Error.createf ~loc "[%%graphql] accepts a string, e.g. [%%graphql {| { query |}]"
     ))
 
-let ext = Extension.declare
-    "graphql"
-    Extension.Context.module_expr
-    Ast_pattern.__
-    rewrite
+let () =
+  let verbose_logging = ref false in
+  let output_mode = ref Ppx_config.String in
+  let verbose_error_handling = ref (
+    match Sys.getenv "NODE_ENV" with
+    | "production" -> false
+    | _ -> true
+    | exception Not_found -> true )
+  in
+  let apollo_mode = ref false in
+  let schema_file = ref "graphql_schema.json" in
 
-let () = Ppxlib.Driver.register_transformation ~extensions:[ext] "graphql"
+  let args = [
+    "-verbose", Arg.Set verbose_logging, "";
+    "-ast-out", Arg.Unit (fun () -> output_mode := Ppx_config.Apollo_AST), "";
+    "-o", Arg.Clear verbose_error_handling, "";
+    "-apollo-mode", Arg.Set apollo_mode, "";
+    "-schema", Arg.Set_string schema_file, ""
+  ]
+  in
+
+  let rewrite ~loc ~path e =
+    let () = Ppx_config.set_config {
+        verbose_logging = !verbose_logging;
+        output_mode = !output_mode;
+        verbose_error_handling = !verbose_error_handling;
+        apollo_mode = !apollo_mode;
+        root_directory = Sys.getcwd ();
+        schema_file = !schema_file;
+        raise_error_with_loc = fun loc message ->
+          let loc = conv_loc loc in
+          raise (Location.Error (Location.Error.createf ~loc "%s" message))
+      }
+    in
+    rewrite ~loc ~path e
+  in
+
+  List.iter (fun (flag, spec, doc) -> Ppxlib.Driver.add_arg flag spec ~doc)
+    args;
+
+  let ext = Extension.declare
+      "graphql"
+      Extension.Context.module_expr
+      Ast_pattern.__
+      rewrite
+  in
+
+  Ppxlib.Driver.register_transformation ~extensions:[ext] "graphql"
