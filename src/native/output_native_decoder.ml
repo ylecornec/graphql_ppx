@@ -141,7 +141,7 @@ and generate_record_decoder config loc name fields =
             let loc = conv_loc loc in
             Some [%expr match Stdlib.List.assoc [%e const_str_expr field] value with
               | value -> [%e generate_decoder config inner]
-              | exception Not_found -> [%e
+              | exception (Not_found [@warning "-3"]) -> [%e
                 if can_be_absent_as_field inner then
                   [%expr None ]
                 else 
@@ -189,7 +189,7 @@ and generate_object_decoder config loc name fields =
                         (Cfk_concrete (Fresh,
                                        [%expr match Stdlib.List.assoc [%e const_str_expr key] value with
                                          | value -> [%e generate_decoder config inner]
-                                         | exception Not_found -> [%e
+                                         | exception (Not_found [@warning "-3"])-> [%e
                                            if can_be_absent_as_field inner then
                                              [%expr None]
                                            else 
@@ -213,7 +213,7 @@ and generate_poly_variant_selection_set config loc name fields =
                                           (Compat.capitalize_ascii field)
                                           (Some (generate_decoder config inner))) in
       [%expr match Stdlib.List.assoc [%e const_str_expr field] value with
-        | exception Not_found -> [%e make_error_raiser loc [%expr
+        | exception (Not_found [@warning "-3"]) -> [%e make_error_raiser loc [%expr
             "Field " ^ [%e const_str_expr field] ^
             " on type " ^ [%e const_str_expr name] ^ " is missing"]]
         | temp -> match temp with
@@ -260,7 +260,7 @@ and generate_poly_variant_interface config loc name base fragments =
   [%expr
     match value with
     | `Assoc typename_obj -> begin match Stdlib.List.assoc "__typename" typename_obj with
-        | exception Not_found -> [%e make_error_raiser loc [%expr
+        | exception (Not_found [@warning "-3"]) -> [%e make_error_raiser loc [%expr
             "Interface implementation" ^ [%e const_str_expr name] ^
             " is missing the __typename field"]]
         | typename -> begin match typename with
@@ -300,7 +300,7 @@ and generate_poly_variant_union config loc name fragments exhaustive_flag =
   [%expr
     match value with
     | `Assoc typename_obj -> begin match Stdlib.List.assoc "__typename" typename_obj with
-        | exception Not_found -> [%e make_error_raiser loc [%expr
+        | exception (Not_found [@warning "-3"]) -> [%e make_error_raiser loc [%expr
             "Union " ^ [%e const_str_expr name] ^
             " is missing the __typename field"]]
         | typename -> begin match typename with
