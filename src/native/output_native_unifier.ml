@@ -67,7 +67,7 @@ let make_make_fun config variable_defs =
         |> Ast_helper.Exp.array in 
       let loc = config.map_loc span |> conv_loc in
       let variable_ctor_body = 
-        [%expr `Assoc ([%e make_var_ctor item] |> Array.to_list)] [@metaloc loc]
+        [%expr `Assoc ([%e make_var_ctor item] |> Stdlib.Array.to_list)] [@metaloc loc]
       in
       (
         make_labelled_function item (make_make_triple loc variable_ctor_body),

@@ -54,7 +54,7 @@ let rec parser_for_type schema loc type_ref =
   | Ntr_list x ->
     let child_parser = parser_for_type schema loc x in
     let loc = conv_loc loc in
-    [%expr fun v -> `List (Array.map [%e child_parser] v |> Array.to_list)] [@metaloc loc]
+    [%expr fun v -> `List (Stdlib.Array.map [%e child_parser] v |> Stdlib.Array.to_list)] [@metaloc loc]
   | Ntr_nullable x ->
     let child_parser = parser_for_type schema loc x in
     let loc = conv_loc loc in
@@ -84,7 +84,7 @@ let json_of_fields schema loc expr fields =
                                )] [@metaloc conv_loc loc]) in
   let field_array = Ast_helper.Exp.array field_array_exprs in
   let loc = conv_loc loc in
-  [%expr `Assoc (Array.to_list [%e field_array])] [@metaloc loc]
+  [%expr `Assoc (Stdlib.Array.to_list [%e field_array])] [@metaloc loc]
 
 let generate_encoder config (spanning, x) =
   let loc = config.map_loc spanning.span in

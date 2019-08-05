@@ -139,7 +139,7 @@ and generate_record_decoder config loc name fields =
       |> filter_map (function
           | Fr_named_field (field, loc, inner) -> 
             let loc = conv_loc loc in
-            Some [%expr match List.assoc [%e const_str_expr field] value with
+            Some [%expr match Stdlib.List.assoc [%e const_str_expr field] value with
               | value -> [%e generate_decoder config inner]
               | exception Not_found -> [%e
                 if can_be_absent_as_field inner then
@@ -187,7 +187,7 @@ and generate_object_decoder config loc name fields =
                         { txt = key; loc = Location.none }
                         Public
                         (Cfk_concrete (Fresh,
-                                       [%expr match List.assoc [%e const_str_expr key] value with
+                                       [%expr match Stdlib.List.assoc [%e const_str_expr key] value with
                                          | value -> [%e generate_decoder config inner]
                                          | exception Not_found -> [%e
                                            if can_be_absent_as_field inner then
@@ -212,7 +212,7 @@ and generate_poly_variant_selection_set config loc name fields =
       let variant_decoder = Ast_helper.(Exp.variant
                                           (Compat.capitalize_ascii field)
                                           (Some (generate_decoder config inner))) in
-      [%expr match List.assoc [%e const_str_expr field] value with
+      [%expr match Stdlib.List.assoc [%e const_str_expr field] value with
         | exception Not_found -> [%e make_error_raiser loc [%expr
             "Field " ^ [%e const_str_expr field] ^
             " on type " ^ [%e const_str_expr name] ^ " is missing"]]
@@ -259,7 +259,7 @@ and generate_poly_variant_interface config loc name base fragments =
                                        (List.concat [ fragment_cases; [ fallback_case ]])) in
   [%expr
     match value with
-    | `Assoc typename_obj -> begin match List.assoc "__typename" typename_obj with
+    | `Assoc typename_obj -> begin match Stdlib.List.assoc "__typename" typename_obj with
         | exception Not_found -> [%e make_error_raiser loc [%expr
             "Interface implementation" ^ [%e const_str_expr name] ^
             " is missing the __typename field"]]
@@ -299,7 +299,7 @@ and generate_poly_variant_union config loc name fragments exhaustive_flag =
                                        (List.concat [ fragment_cases; [ fallback_case ]])) in
   [%expr
     match value with
-    | `Assoc typename_obj -> begin match List.assoc "__typename" typename_obj with
+    | `Assoc typename_obj -> begin match Stdlib.List.assoc "__typename" typename_obj with
         | exception Not_found -> [%e make_error_raiser loc [%expr
             "Union " ^ [%e const_str_expr name] ^
             " is missing the __typename field"]]
