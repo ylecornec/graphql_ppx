@@ -2,7 +2,7 @@ module NullVisitor: Traversal_utils.VisitorSig = struct
   type t = ()
   include Traversal_utils.AbstractVisitor
   let make_self _ = ()
-end
+end [@ocaml.warning "-65"]
 
 module Visitor(H: Traversal_utils.VisitorSig)(T: Traversal_utils.VisitorSig): Traversal_utils.VisitorSig = struct
   type t = H.t * T.t
