@@ -253,8 +253,8 @@ let get_ppx_cache_path suffix relative_to =
   let name = ((Filename.basename relative_to)^suffix) in
   Filename.concat dir (ppx_cache_dir^name)
 
-let get_marshaled_path = get_ppx_cache_path ".marshaled"
-let get_hash_path = get_ppx_cache_path ".hash"
+let get_marshaled_path filename = get_ppx_cache_path (filename ^ ".marshaled")
+let get_hash_path filename = get_ppx_cache_path (filename ^ ".hash")
 
 let parse_json_schema json_schema =
   Log.log ("[parse json schema] "^json_schema);
@@ -269,8 +269,8 @@ let parse_json_schema json_schema =
   }
 
 (* marshaled schema would be placed in `.graphql_ppx_cache` dir relatively to json_schema *)
-let create_marshaled_schema json_schema data =
-  let marshaled_schema = (get_marshaled_path json_schema) in
+let create_marshaled_schema ~filename json_schema data =
+  let marshaled_schema = (get_marshaled_path filename json_schema) in
   Log.log ("[write marshaled] "^marshaled_schema);
   match open_out_bin marshaled_schema with
   | exception Sys_error msg -> Log.must_log ("[write marshaled][Sys_error]: "^msg); raise (Sys_error msg)
@@ -280,46 +280,46 @@ let create_marshaled_schema json_schema data =
   end
 
 (* build_schema: parse json schema and create marshaled schema *)
-let build_schema json_schema = 
+let build_schema ~filename json_schema =
   json_schema
   |> parse_json_schema
-  |> create_marshaled_schema (json_schema)
+  |> create_marshaled_schema ~filename (json_schema)
 
-let build_schema_if_dirty json_schema = 
+let build_schema_if_dirty ~filename json_schema =
   Dirty_checker.(
     {
       src = json_schema;
-      hash_path = get_hash_path json_schema;
-      dirty_callback = build_schema;
+      hash_path = get_hash_path filename json_schema;
+      dirty_callback = build_schema ~filename;
     }
     |> check)
 
-let rec read_marshaled_schema json_schema =
-  let marshaled_schema = (get_marshaled_path json_schema) in
+let rec read_marshaled_schema ~filename json_schema =
+  let marshaled_schema = (get_marshaled_path filename json_schema) in
   Log.log ("[read marshaled] "^marshaled_schema);
   match open_in_bin marshaled_schema with
   | exception Sys_error msg -> Log.must_log ("[read marshaled][Sys_error]: "^msg); raise (Sys_error msg)
   | file -> begin
     let data = match Marshal.from_channel file with
       | data -> data
-      | exception _ -> recovery_build json_schema
+      | exception _ -> recovery_build ~filename json_schema
     in
     close_in file; data
   end
 
-and recovery_build json_schema = 
+and recovery_build ~filename json_schema =
   let () = Log.must_log "Marshaled file is broken. Doing recovery build..." in
   (* we don't remove marshal file since it might result in race condition, 
    * we simply let every thread noticed the broken marshal file rewrite to it *)
-  build_schema_if_dirty json_schema;
-  read_marshaled_schema (json_schema) 
+  build_schema_if_dirty ~filename json_schema;
+  read_marshaled_schema ~filename (json_schema)
 
 (* lazily read schema and check if schema file existed *)
-let get_schema () = lazy (
+let get_schema ~filename () = lazy (
   match find_file_towards_root (Ppx_config.root_directory ()) (Ppx_config.schema_file ()) with 
     | None -> raise Schema_file_not_found
     | Some json_schema -> 
-      build_schema_if_dirty json_schema;
-      read_marshaled_schema (json_schema) 
+      build_schema_if_dirty ~filename json_schema;
+      read_marshaled_schema ~filename (json_schema)
 )
 

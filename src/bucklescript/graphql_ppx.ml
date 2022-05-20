@@ -1,3 +1,4 @@
+open Migrate_parsetree
 module From_current = Migrate_parsetree.Convert(Migrate_parsetree.OCaml_current)(Migrate_parsetree.OCaml_402)
 module To_current = Migrate_parsetree.Convert(Migrate_parsetree.OCaml_402)(Migrate_parsetree.OCaml_current)
 
@@ -66,6 +67,14 @@ let rewrite_query loc delim query =
   let open Parsetree in 
   let lexer = Graphql_lexer.make query in
   let delimLength = match delim with | Some s -> 2 + String.length s | None -> 1 in
+  let filename =
+    let filename = Bytes.of_string loc.loc_start.pos_fname in
+    for i = 0 to (Bytes.length filename - 1) do
+      if Char.equal (Bytes.get filename i) '/' then
+        Bytes.set filename i '_'
+    done;
+    Bytes.to_string filename
+  in
   match Graphql_lexer.consume lexer with
   | Result.Error e -> raise (Location.Error (
       Location.error ~loc:(add_loc delimLength loc e.span |> conv_loc) (fmt_lex_err e.item)
@@ -82,7 +91,7 @@ let rewrite_query loc delim query =
         delimiter = delim;
         full_document = document;
         (*  the only call site of schema, make it lazy! *)
-        schema = Lazy.force (Read_schema.get_schema ());
+        schema = Lazy.force (Read_schema.get_schema ~filename ());
       } in
       match Validations.run_validators config document with
       | Some errs ->
