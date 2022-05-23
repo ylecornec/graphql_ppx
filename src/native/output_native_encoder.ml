@@ -41,14 +41,14 @@ let sort_variable_types schema variables =
   let () = loop StringSet.empty variables in
   let ordered_nodes = Array.init
       (Queue.length ordered_nodes)
-      (fun _ -> 
+      (fun _ ->
          let span, name = Queue.take ordered_nodes in
          (span, name |> lookup_type schema |> Option.unsafe_unwrap)) in
   (! recursive_flag, ordered_nodes)
 
-let function_name_string x = "json_of_" ^ Schema.extract_name_from_type_meta x
+let function_name_string prefix x = prefix ^ "json_of_" ^ Schema.extract_name_from_type_meta x
 
-let rec parser_for_type schema loc type_ref = 
+let rec parser_for_type schema loc type_ref =
   let raise_inconsistent_schema type_name = raise_error_with_loc loc ("Inconsistent schema, type named " ^ type_name ^ " cannot be found") in
   match type_ref with
   | Ntr_list x ->
@@ -62,15 +62,16 @@ let rec parser_for_type schema loc type_ref =
   | Ntr_named type_name ->
     let loc = conv_loc loc in
     match lookup_type schema type_name  with
-    | None -> raise_inconsistent_schema type_name 
+    | None -> raise_inconsistent_schema type_name
     | Some (Scalar { sm_name = "String"; _ })
     | Some (Scalar { sm_name = "ID"; _ }) -> [%expr fun v -> `String v]
     | Some (Scalar { sm_name = "Int"; _ }) -> [%expr fun v -> `Int v]
     | Some (Scalar { sm_name = "Float"; _ }) -> [%expr fun v -> `Float v]
     | Some (Scalar { sm_name = "Boolean"; _ }) -> [%expr fun v -> `Bool v]
-    | Some (Scalar _) -> [%expr fun v -> v]
+    (* | Some (Scalar _) -> [%expr fun v -> v] *)
+    | Some (Scalar {sm_name; _}) -> ident_from_string loc ("json_of_"  ^ sm_name)
     | Some ty ->
-      function_name_string ty |> ident_from_string loc
+      function_name_string "" ty |> ident_from_string loc
 
 let json_of_fields schema loc expr fields =
   let field_array_exprs = fields |> List.map
@@ -101,12 +102,12 @@ let generate_encoder config (spanning, x) =
                             let expr = Ast_helper.Exp.constant (Pconst_string (evm_name, None)) in
                             Ast_helper.Exp.case pattern [%expr `String [%e expr]]) in
       Ast_helper.Exp.match_ [%expr value] match_arms
-    | InputObject { iom_input_fields; _ } -> 
+    | InputObject { iom_input_fields; _ } ->
       let sub_value = let loc = conv_loc loc in [%expr value] in
       json_of_fields config.schema loc sub_value iom_input_fields
   in
   let loc = conv_loc loc in
-  Ast_helper.Vb.mk ~loc (Ast_helper.Pat.var { txt = function_name_string x; loc }) [%expr fun value -> [%e body]]
+  Ast_helper.Vb.mk ~loc (Ast_helper.Pat.var { txt = function_name_string "auto" x; loc }) [%expr fun value -> [%e body]]
 
 let generate_encoders config _loc = function
   | Some { item; _ } ->
