@@ -81,15 +81,20 @@ let make_printed_query config document =
     [%stri let query = ppx_printed_query];
   ]
 
-let generate_default_operation config variable_defs has_error operation res_structure =
+let generate_default_operation config variable_defs has_error operation res_structure encoders_opt =
   let parse_fn = Output_native_decoder.generate_decoder config res_structure in
   let loc = Location.none in
   if has_error then
     [ [%stri let parse = fun value -> [%e parse_fn]] ]
   else
     let (rec_flag, encoders) =
-      Output_native_encoder.generate_encoders config (Result_structure.res_loc res_structure) variable_defs in
-    let make_fn, make_with_variables_fn = Output_native_unifier.make_make_fun config variable_defs in
+      (* we do not generate encoders if some are already provided by the user *)
+      match encoders_opt with
+      | Some _ -> (Nonrecursive, [||])
+      | None ->
+      Output_native_encoder.generate_encoders config (Result_structure.res_loc res_structure) encoders_opt variable_defs
+    in
+    let make_fn, make_with_variables_fn = Output_native_unifier.make_make_fun config variable_defs encoders_opt in
     List.concat [
       make_printed_query config [Graphql_ast.Operation operation];
       List.concat [
@@ -140,10 +145,10 @@ let generate_fragment_module config name _required_variables has_error fragment 
     } in
   [ { pstr_desc = m; pstr_loc = Location.none; } ]
 
-let generate_operation config = function
-  | Mod_default_operation (vdefs, has_error, operation, structure) -> generate_default_operation config vdefs has_error operation structure
+let generate_operation config encoder_opt = function
+  | Mod_default_operation (vdefs, has_error, operation, structure) -> generate_default_operation config vdefs has_error operation structure encoder_opt
   | Mod_fragment (name, req_vars, has_error, fragment, structure) -> generate_fragment_module config name req_vars has_error fragment structure
 
-let generate_modules config operations =
-  let generated = List.map (generate_operation config) operations in
+let generate_modules config operations encoder_opt =
+  let generated = List.map (generate_operation config encoder_opt) operations in
   Mod.mk (Pmod_structure (List.concat generated))

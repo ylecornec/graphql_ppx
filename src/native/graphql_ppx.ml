@@ -85,7 +85,7 @@ let () = Ppx_config.(set_config {
       raise (Location.Error (Location.Error.createf ~loc "%s" message))
   })
 
-let rewrite_query loc delim query =
+let rewrite_query loc delim query encoders_opt =
   let lexer = Graphql_lexer.make query in
   let delimLength = match delim with | Some s -> 2 + String.length s | None -> 1 in
   let filename =
@@ -100,7 +100,7 @@ let rewrite_query loc delim query =
   | Result.Error e -> raise (Location.Error (
       Location.Error.createf ~loc:(add_loc delimLength loc e.span |> conv_loc) "%s" (fmt_lex_err e.item)
     ))
-  | Result.Ok tokens -> 
+  | Result.Ok tokens ->
     let parser = Graphql_parser.make tokens in
     match Graphql_parser_document.parse_document parser with
     | Result.Error e -> raise (Location.Error (
@@ -122,18 +122,58 @@ let rewrite_query loc delim query =
                [%stri let _ = [%e make_error_expr loc msg]]) errs))
       | None ->
         let parts = Result_decoder.unify_document_schema config document in
-        Output_native_module.generate_modules config parts
+        Output_native_module.generate_modules config parts encoders_opt
+
+let rec get_encoders_module attributes ~loc =
+  let rec parse_module_path txt =
+    match txt with
+    | Lident m -> m
+    | Ldot (rest, m) -> Format.sprintf "%s.%s" (parse_module_path rest) m
+    | _ ->
+       raise (Location.Error (
+                  Location.Error.createf ~loc "the encoders attribute accepts an ocaml module, e.g. [%%graphql {| { query |}[@encoders Path.To.Module]]"
+         ))
+  in
+  match attributes with
+  | [] -> None
+  | {attr_name = {txt = "encoders"; _};
+     attr_payload =
+       PStr
+         [{pstr_desc =
+             Pstr_eval
+               ({pexp_desc =
+                    Pexp_construct ({txt; _}, None);
+                 pexp_loc_stack = [];_},_);_}];_}::_
+    -> Some (parse_module_path txt)
+    |_::rest -> get_encoders_module rest ~loc
+
 
 let rewrite ~loc ~path:_ expr =
   let open Parsetree in
   match expr with
   | PStr [{ pstr_desc = Pstr_eval ({
-      pexp_loc = loc; 
-      pexp_desc = Pexp_constant (Pconst_string (query, delim)); _ }, _); _ }] ->
+      pexp_loc = loc;
+      pexp_desc = Pexp_constant (Pconst_string (query, delim));
+      pexp_attributes = attributes;
+      _ }, _); _ }] ->
     rewrite_query
       (conv_loc_from_ast loc)
       delim
       query
+      (get_encoders_module attributes ~loc)
+
+(*   | PStr [ *)
+(* { pstr_desc = Pstr_eval ({ *)
+(*       pexp_loc = _encoders_loc; *)
+(*       pexp_desc = Pexp_constant (Pconst_string (encoders, _encoders_delim)); _ }, _); _ } *)
+(* ; { pstr_desc = Pstr_eval ({ *)
+(*       pexp_loc = loc; *)
+(*       pexp_desc = Pexp_constant (Pconst_string (query, delim)); _ }, _); _ }] -> *)
+(*     rewrite_query *)
+(*       (conv_loc_from_ast loc) *)
+(*       delim *)
+(*       query *)
+(*       (Some encoders) *)
   | _ -> raise (Location.Error (
       Location.Error.createf ~loc "[%%graphql] accepts a string, e.g. [%%graphql {| { query |}]"
     ))

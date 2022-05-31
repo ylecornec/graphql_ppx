@@ -13,7 +13,7 @@ open Output_native_utils
 exception Unimplemented of string
 
 
-let make_make_fun config variable_defs =
+let make_make_fun config variable_defs encoder_opt =
   let make_make_triple loc variables =
     [%expr object
       method query = ppx_printed_query
@@ -27,7 +27,7 @@ let make_make_fun config variable_defs =
         | [] -> [%expr fun () -> [%e body]] [@metaloc config.map_loc span |> conv_loc]
         | (name, def) :: tl -> let name_loc = config.map_loc name.span |> conv_loc in
           Ast_helper.(
-            Exp.fun_ 
+            Exp.fun_
               ~loc:name_loc
               (match def.vd_type.item with
                | Tr_non_null_list _ | Tr_non_null_named _ -> Labelled name.item
@@ -51,11 +51,11 @@ let make_make_fun config variable_defs =
       in
       let make_var_ctor defs =
         defs
-        |> List.map (fun (name, def) -> 
+        |> List.map (fun (name, def) ->
             let parser_ = (
               Output_native_encoder.parser_for_type config.schema (config.map_loc name.span) (
                 to_native_type_ref (to_schema_type_ref def.vd_type.item)
-              )
+              ) encoder_opt
             ) in
             let loc = config.map_loc name.span |> conv_loc in
             [%expr
@@ -64,9 +64,9 @@ let make_make_fun config variable_defs =
                 [%e parser_] [%e Ast_helper.Exp.ident ~loc {txt=Longident.parse name.item; loc}]
               )] [@metaloc loc]
           )
-        |> Ast_helper.Exp.array in 
+        |> Ast_helper.Exp.array in
       let loc = config.map_loc span |> conv_loc in
-      let variable_ctor_body = 
+      let variable_ctor_body =
         [%expr `Assoc ([%e make_var_ctor item] |> Stdlib.Array.to_list)] [@metaloc loc]
       in
       (

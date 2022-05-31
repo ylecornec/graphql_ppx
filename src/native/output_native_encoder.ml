@@ -46,17 +46,24 @@ let sort_variable_types schema variables =
          (span, name |> lookup_type schema |> Option.unsafe_unwrap)) in
   (! recursive_flag, ordered_nodes)
 
-let function_name_string prefix x = prefix ^ "json_of_" ^ Schema.extract_name_from_type_meta x
+let function_name_string ?(module_path="") x =
+  let prefix =
+    if module_path = "" then
+      ""
+    else
+      module_path ^ "."
+  in
+  prefix ^ "json_of_" ^ Schema.extract_name_from_type_meta x
 
-let rec parser_for_type schema loc type_ref =
+let rec parser_for_type schema loc type_ref encoder_opt =
   let raise_inconsistent_schema type_name = raise_error_with_loc loc ("Inconsistent schema, type named " ^ type_name ^ " cannot be found") in
   match type_ref with
   | Ntr_list x ->
-    let child_parser = parser_for_type schema loc x in
+    let child_parser = parser_for_type schema loc x encoder_opt in
     let loc = conv_loc loc in
     [%expr fun v -> `List (Stdlib.Array.map [%e child_parser] v |> Stdlib.Array.to_list)] [@metaloc loc]
   | Ntr_nullable x ->
-    let child_parser = parser_for_type schema loc x in
+    let child_parser = parser_for_type schema loc x encoder_opt in
     let loc = conv_loc loc in
     [%expr fun v -> match v with None -> `Null | Some v -> [%e child_parser] v] [@metaloc loc]
   | Ntr_named type_name ->
@@ -68,16 +75,21 @@ let rec parser_for_type schema loc type_ref =
     | Some (Scalar { sm_name = "Int"; _ }) -> [%expr fun v -> `Int v]
     | Some (Scalar { sm_name = "Float"; _ }) -> [%expr fun v -> `Float v]
     | Some (Scalar { sm_name = "Boolean"; _ }) -> [%expr fun v -> `Bool v]
-    (* | Some (Scalar _) -> [%expr fun v -> v] *)
-    | Some (Scalar {sm_name; _}) -> ident_from_string loc ("json_of_"  ^ sm_name)
+    | Some (Scalar {sm_name; _}) ->
+       begin
+         match encoder_opt with
+         | None -> [%expr fun v -> v]
+         | Some module_path ->
+            ident_from_string loc (Format.sprintf "%s.json_of_%s" module_path sm_name)
+       end
     | Some ty ->
-      function_name_string "" ty |> ident_from_string loc
+       function_name_string ?module_path:encoder_opt ty |> ident_from_string loc
 
-let json_of_fields schema loc expr fields =
+let json_of_fields schema loc expr fields encoder_opt =
   let field_array_exprs = fields |> List.map
                             (fun {am_name; am_arg_type; _} ->
                                let type_ref = to_native_type_ref am_arg_type in
-                               let parser = parser_for_type schema loc type_ref in
+                               let parser = parser_for_type schema loc type_ref encoder_opt in
                                let loc = conv_loc loc in
                                [%expr (
                                  [%e Ast_helper.Exp.constant (Pconst_string (am_name, None)) ],
@@ -87,7 +99,7 @@ let json_of_fields schema loc expr fields =
   let loc = conv_loc loc in
   [%expr `Assoc (Stdlib.Array.to_list [%e field_array])] [@metaloc loc]
 
-let generate_encoder config (spanning, x) =
+let generate_encoder config encoder_opt (spanning, x) =
   let loc = config.map_loc spanning.span in
   let body = match x with
     | Scalar _ -> raise_error_with_loc loc "Can not build variable encoder for scalar type"
@@ -104,15 +116,15 @@ let generate_encoder config (spanning, x) =
       Ast_helper.Exp.match_ [%expr value] match_arms
     | InputObject { iom_input_fields; _ } ->
       let sub_value = let loc = conv_loc loc in [%expr value] in
-      json_of_fields config.schema loc sub_value iom_input_fields
+      json_of_fields config.schema loc sub_value iom_input_fields encoder_opt
   in
   let loc = conv_loc loc in
-  Ast_helper.Vb.mk ~loc (Ast_helper.Pat.var { txt = function_name_string "auto" x; loc }) [%expr fun value -> [%e body]]
+  Ast_helper.Vb.mk ~loc (Ast_helper.Pat.var { txt = function_name_string x; loc }) [%expr fun value -> [%e body]]
 
-let generate_encoders config _loc = function
+let generate_encoders config _loc encoder_opt = function
   | Some { item; _ } ->
     item
     |> List.map (fun (span, {vd_type = variable_type; _}) -> span, to_schema_type_ref variable_type.item)
     |> sort_variable_types config.schema
-    |> (fun (is_recursive, types) -> (if is_recursive then Recursive else Nonrecursive), Array.map (generate_encoder config) types)
+    |> (fun (is_recursive, types) -> (if is_recursive then Recursive else Nonrecursive), Array.map (generate_encoder config encoder_opt) types)
   | None -> (Nonrecursive, [||])
